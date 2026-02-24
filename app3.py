@@ -36,12 +36,12 @@ st.markdown("""
     }
     .metric-card {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 1.5rem;  /* Increased padding */
+        padding: 1.5rem;
         border-radius: 10px;
         color: white;
         text-align: center;
         box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        height: 160px;  /* Increased from 120px to 160px */
+        height: 160px;
         display: flex;
         flex-direction: column;
         justify-content: center;
@@ -50,13 +50,13 @@ st.markdown("""
     }
     .metric-card h4 {
         margin: 0;
-        font-size: 1.1rem;  /* Slightly increased */
+        font-size: 1rem;
         font-weight: 400;
         opacity: 0.9;
     }
     .metric-card h2 {
-        margin: 0.7rem 0 0 0;  /* Increased top margin */
-        font-size: 2.5rem;  /* Increased from 2.2rem to 2.5rem */
+        margin: 0.7rem 0 0 0;
+        font-size: 2.5rem;
         font-weight: 700;
     }
     .refresh-badge {
@@ -80,8 +80,8 @@ st.markdown("""
         font-weight: 500;
     }
     .status-progress {
-        background-color: #F59E0B;
-        color: white;
+        background-color: #FEF3C7;
+        color: #92400E;
         padding: 0.25rem 0.75rem;
         border-radius: 20px;
         font-size: 0.85rem;
@@ -95,10 +95,16 @@ st.markdown("""
         font-size: 0.85rem;
         font-weight: 500;
     }
-    /* Ensure all columns have same height */
     div[data-testid="column"] {
         display: flex;
         flex-direction: column;
+    }
+    .chart-container {
+        background-color: white;
+        border-radius: 10px;
+        padding: 1rem;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        margin-bottom: 1rem;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -123,6 +129,32 @@ def get_direct_link(share_link):
     except Exception as e:
         st.warning(f"Error creating direct link: {str(e)}")
         return share_link
+
+def parse_dates(date_str):
+    """Parse dates in DD/MM/YY format"""
+    if pd.isna(date_str) or date_str == '':
+        return pd.NaT
+    
+    try:
+        # Try parsing as DD/MM/YY
+        if isinstance(date_str, str):
+            # Remove any extra spaces
+            date_str = date_str.strip()
+            
+            # Try different date formats
+            for fmt in ['%d/%m/%y', '%d/%m/%Y', '%d-%m-%y', '%d-%m-%Y', '%Y-%m-%d']:
+                try:
+                    return pd.to_datetime(date_str, format=fmt)
+                except:
+                    continue
+            
+            # If specific formats fail, let pandas guess with dayfirst=True
+            return pd.to_datetime(date_str, dayfirst=True)
+        else:
+            # If it's already a datetime or timestamp
+            return pd.to_datetime(date_str)
+    except:
+        return pd.NaT
 
 # Load data function (no cache for real-time updates)
 def load_data_from_onedrive():
@@ -164,9 +196,11 @@ def load_data_from_onedrive():
         if status_col:
             df.rename(columns={status_col: 'Status'}, inplace=True)
         
-        # Convert Target Date to datetime
+        # Convert Target Date to datetime with DD/MM/YY format handling
         if 'Target Date' in df.columns:
-            df['Target Date'] = pd.to_datetime(df['Target Date'])
+            # Apply date parsing function
+            df['Target Date'] = df['Target Date'].apply(parse_dates)
+            
         
         # Calculate days remaining
         if 'Target Date' in df.columns:
@@ -245,18 +279,29 @@ selected_status = st.sidebar.multiselect(
     default=['Not Started', 'In Progress', 'Completed']
 )
 
-# Date range filter
+# Date range filter - FIXED: Removed the format parameter
 if 'Target Date' in df.columns and not df['Target Date'].isna().all():
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 📅 Target Date Range")
-    min_date = df['Target Date'].min().date()
-    max_date = df['Target Date'].max().date()
-    date_range = st.sidebar.date_input(
-        "Select Range",
-        value=(min_date, max_date),
-        min_value=min_date,
-        max_value=max_date
-    )
+    
+    # Get min and max dates
+    valid_dates = df['Target Date'].dropna()
+    if not valid_dates.empty:
+        min_date = valid_dates.min().date()
+        max_date = valid_dates.max().date()
+        
+        # Simple date input without format parameter
+        date_range = st.sidebar.date_input(
+            "Select Range",
+            value=(min_date, max_date),
+            min_value=min_date,
+            max_value=max_date
+        )
+        
+        # Show hint about expected format
+        st.sidebar.caption("Dates are stored in DD/MM/YY format")
+    else:
+        date_range = None
 else:
     date_range = None
 
@@ -285,14 +330,18 @@ if 'Status' in filtered_df.columns:
 
 if date_range and len(date_range) == 2 and 'Target Date' in filtered_df.columns:
     start_date, end_date = date_range
+    # Convert to datetime for comparison
+    start_datetime = pd.Timestamp(start_date)
+    end_datetime = pd.Timestamp(end_date) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)  # End of day
+    
     filtered_df = filtered_df[
-        (filtered_df['Target Date'].dt.date >= start_date) &
-        (filtered_df['Target Date'].dt.date <= end_date)
+        (filtered_df['Target Date'] >= start_datetime) &
+        (filtered_df['Target Date'] <= end_datetime)
     ]
 
 # Main dashboard
 st.markdown('<p class="main-header">🎯 VMware Certification Dashboard 2026</p>', unsafe_allow_html=True)
-st.markdown("### March 2026 Target Status")
+st.markdown("### VMware Certification Status")
 
 # Top KPI metrics - All 8 columns with equal width and increased uniform height
 col1, col2, col3, col4, col5, col6, col7, col8 = st.columns(8)
@@ -352,9 +401,9 @@ with col6:
 with col7:
     in_progress_count = len(filtered_df[filtered_df['Status'] == 'In Progress']) if 'Status' in filtered_df.columns else 0
     st.markdown("""
-        <div class="metric-card" style="background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%); height: 160px;">
-            <h4>Progress</h4>
-            <h2>{}</h2>
+        <div class="metric-card" style="background: linear-gradient(135deg, #FFFF00 0%, #FDE68A 100%); height: 160px; color: #92400E;">
+            <h4 style="color: #92400E;">In Progress</h4>
+            <h2 style="color: #92400E;">{}</h2>
         </div>
     """.format(in_progress_count), unsafe_allow_html=True)
 
@@ -362,14 +411,14 @@ with col8:
     not_started_count = len(filtered_df[filtered_df['Status'] == 'Not Started']) if 'Status' in filtered_df.columns else 0
     st.markdown("""
         <div class="metric-card" style="background: linear-gradient(135deg, #EF4444 0%, #DC2626 100%); height: 160px;">
-            <h4>NotStarted</h4>
+            <h4>Not Started</h4>
             <h2>{}</h2>
         </div>
     """.format(not_started_count), unsafe_allow_html=True)
 
 st.markdown("---")
 
-# Charts section
+# Charts section with professional styling
 col1, col2 = st.columns(2)
 
 with col1:
@@ -377,11 +426,49 @@ with col1:
     if 'Category' in filtered_df.columns:
         category_counts = filtered_df['Category'].value_counts().reset_index()
         category_counts.columns = ['Category', 'Count']
-        colors = {'Sales': '#3B82F6', 'Pre-Sales': '#8B5CF6', 'Post-Sales': '#EC4899'}
+        
+        # Professional color palette for categories
+        colors = {'Sales': '#2E4057',      # Dark blue-gray
+                 'Pre-Sales': '#4A6FA5',   # Muted blue
+                 'Post-Sales': '#6B4E71'}   # Muted purple
+        
+        # Create donut chart for more modern look
         fig = px.pie(category_counts, values='Count', names='Category', 
                      title='Distribution by Category',
-                     color='Category', color_discrete_map=colors)
-        fig.update_traces(textposition='inside', textinfo='percent+label')
+                     color='Category', 
+                     color_discrete_map=colors,
+                     hole=0.4)  # Creates donut chart
+        
+        # Update layout for professional appearance
+        fig.update_traces(
+            textposition='inside', 
+            textinfo='percent+label',
+            textfont=dict(size=12, color='white'),
+            marker=dict(line=dict(color='white', width=2)),
+            hovertemplate='<b>%{label}</b><br>Count: %{value}<br>Percentage: %{percent}<extra></extra>'
+        )
+        
+        fig.update_layout(
+            showlegend=True,
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=-0.2,
+                xanchor="center",
+                x=0.5,
+                font=dict(size=11)
+            ),
+            margin=dict(t=50, b=50, l=20, r=20),
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
+            title=dict(
+                text="Distribution by Category",
+                font=dict(size=16, color='#1E3A8A'),
+                x=0.5,
+                xanchor='center'
+            )
+        )
+        
         st.plotly_chart(fig, use_container_width=True)
     else:
         st.info("Category data not available")
@@ -391,11 +478,49 @@ with col2:
     if 'Status' in filtered_df.columns:
         status_counts = filtered_df['Status'].value_counts().reset_index()
         status_counts.columns = ['Status', 'Count']
-        colors = {'Completed': '#10B981', 'In Progress': '#F59E0B', 'Not Started': '#EF4444'}
+        
+        # Professional color palette for status
+        colors = {'Completed': '#2E7D32',      # Dark green
+                 'In Progress': "#F1CF37",      # Warm amber
+                 'Not Started': '#D32F2F'}      # Dark red
+        
+        # Create donut chart for more modern look
         fig = px.pie(status_counts, values='Count', names='Status', 
                      title='Overall Status Distribution',
-                     color='Status', color_discrete_map=colors)
-        fig.update_traces(textposition='inside', textinfo='percent+label')
+                     color='Status', 
+                     color_discrete_map=colors,
+                     hole=0.4)  # Creates donut chart
+        
+        # Update layout for professional appearance
+        fig.update_traces(
+            textposition='inside', 
+            textinfo='percent+label',
+            textfont=dict(size=12, color='white'),
+            marker=dict(line=dict(color='white', width=2)),
+            hovertemplate='<b>%{label}</b><br>Count: %{value}<br>Percentage: %{percent}<extra></extra>'
+        )
+        
+        fig.update_layout(
+            showlegend=True,
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=-0.2,
+                xanchor="center",
+                x=0.5,
+                font=dict(size=11)
+            ),
+            margin=dict(t=50, b=50, l=20, r=20),
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
+            title=dict(
+                text="Overall Status Distribution",
+                font=dict(size=16, color='#1E3A8A'),
+                x=0.5,
+                xanchor='center'
+            )
+        )
+        
         st.plotly_chart(fig, use_container_width=True)
     else:
         st.info("Status data not available")
@@ -408,9 +533,35 @@ with col1:
     if 'Enablement Area' in filtered_df.columns:
         area_counts = filtered_df['Enablement Area'].value_counts().reset_index()
         area_counts.columns = ['Enablement Area', 'Count']
+        
+        # Professional bar chart styling
+        custom_blues = ['#1E3A8A', '#2563EB', '#3B82F6', '#60A5FA', '#93C5FD', '#BFDBFE']
         fig = px.bar(area_counts, x='Enablement Area', y='Count', 
-                     color='Count', color_continuous_scale='viridis',
-                     title='Certifications by Area')
+             color='Enablement Area',
+             color_discrete_sequence=custom_blues,
+             title='Certifications by Area')
+        
+        fig.update_layout(
+            xaxis_title="Enablement Area",
+            yaxis_title="Number of Certifications",
+            showlegend=False,
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
+            title=dict(
+                text="Certifications by Area",
+                font=dict(size=16, color='#1E3A8A'),
+                x=0.5,
+                xanchor='center'
+            )
+        )
+        
+        fig.update_traces(
+            marker_line_color='white',
+            marker_line_width=1,
+            opacity=0.8,
+            hovertemplate='<b>%{x}</b><br>Count: %{y}<extra></extra>'
+        )
+        
         st.plotly_chart(fig, use_container_width=True)
     else:
         st.info("Enablement Area data not available")
@@ -419,9 +570,42 @@ with col2:
     st.markdown('<p class="sub-header">📊 Category-wise Status</p>', unsafe_allow_html=True)
     if 'Category' in filtered_df.columns and 'Status' in filtered_df.columns:
         category_status = pd.crosstab(filtered_df['Category'], filtered_df['Status'])
+        
+        # Professional color palette for status
+        status_colors = {'Completed': '#2E7D32', 'In Progress': "#F1CF37", 'Not Started': '#D32F2F'}
+        
         fig = px.bar(category_status, barmode='stack', 
                      title='Status Distribution by Category',
-                     color_discrete_map={'Completed': '#10B981', 'In Progress': '#F59E0B', 'Not Started': '#EF4444'})
+                     color_discrete_map=status_colors)
+        
+        fig.update_layout(
+            xaxis_title="Category",
+            yaxis_title="Number of Certifications",
+            legend_title="Status",
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
+            title=dict(
+                text="Status Distribution by Category",
+                font=dict(size=16, color='#1E3A8A'),
+                x=0.5,
+                xanchor='center'
+            ),
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="center",
+                x=0.5
+            )
+        )
+        
+        fig.update_traces(
+            marker_line_color='white',
+            marker_line_width=1,
+            opacity=0.8,
+            hovertemplate='<b>%{x}</b><br>Status: %{legend}<br>Count: %{y}<extra></extra>'
+        )
+        
         st.plotly_chart(fig, use_container_width=True)
     else:
         st.info("Category or Status data not available")
@@ -431,9 +615,42 @@ st.markdown('<p class="sub-header">📅 Certification Timeline</p>', unsafe_allo
 if 'Target Date' in filtered_df.columns and not filtered_df['Target Date'].isna().all():
     timeline_data = filtered_df.groupby([filtered_df['Target Date'].dt.date, 'Status']).size().reset_index()
     timeline_data.columns = ['Target Date', 'Status', 'Count']
+    
+    # Professional color palette for status
+    status_colors = {'Completed': '#2E7D32', 'In Progress': "#F1CF37", 'Not Started': '#D32F2F'}
+    
     fig = px.bar(timeline_data, x='Target Date', y='Count', color='Status',
                   title='Certifications by Target Date',
-                  color_discrete_map={'Completed': '#10B981', 'In Progress': '#F59E0B', 'Not Started': '#EF4444'})
+                  color_discrete_map=status_colors)
+    
+    fig.update_layout(
+        xaxis_title="Target Date",
+        yaxis_title="Number of Certifications",
+        legend_title="Status",
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        title=dict(
+            text="Certifications by Target Date",
+            font=dict(size=16, color='#1E3A8A'),
+            x=0.5,
+            xanchor='center'
+        ),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="center",
+            x=0.5
+        )
+    )
+    
+    fig.update_traces(
+        marker_line_color='white',
+        marker_line_width=1,
+        opacity=0.8,
+        hovertemplate='<b>%{x}</b><br>Status: %{legend}<br>Count: %{y}<extra></extra>'
+    )
+    
     st.plotly_chart(fig, use_container_width=True)
 else:
     st.info("Target Date data not available")
@@ -442,22 +659,23 @@ else:
 st.markdown('<p class="sub-header">📋 Detailed Certification Plan</p>', unsafe_allow_html=True)
 
 display_columns = ['Category', 'Enablement Area', 'Certification Level', 'Engineer Name', 
-                   'Assigned Certification', 'Exam Code', 'Target Date', 'Status', 'Remarks']
+                   'Assigned Certification', 'Target Date', 'Exam Date','Status', 'Remarks']
 available_columns = [col for col in display_columns if col in filtered_df.columns]
 
 if available_columns:
     display_df = filtered_df[available_columns].copy()
     
     if 'Target Date' in display_df.columns:
-        display_df['Target Date'] = display_df['Target Date'].dt.strftime('%Y-%m-%d')
+        # Format dates in DD/MM/YY format for display
+        display_df['Target Date'] = display_df['Target Date'].dt.strftime('%d/%m/%y')
     
     def color_status(val):
         if val == 'Completed':
-            return 'background-color: #D1FAE5; color: #065F46'
+            return 'background-color: #E8F5E9; color: #2E7D32'
         elif val == 'In Progress':
-            return 'background-color: #FEF3C7; color: #92400E'
+            return 'background-color: #FFF3E0; color: #FDB750'
         else:
-            return 'background-color: #FEE2E2; color: #991B1B'
+            return 'background-color: #FFEBEE; color: #D32F2F'
     
     st.dataframe(
         display_df.style.map(color_status, subset=['Status']),
@@ -499,17 +717,18 @@ if 'Engineer Name' in filtered_df.columns:
 # Upcoming deadlines
 st.markdown('<p class="sub-header">⏰ Upcoming Deadlines (Next 7 Days)</p>', unsafe_allow_html=True)
 if 'Target Date' in filtered_df.columns and 'Status' in filtered_df.columns:
-    today = pd.Timestamp.now().date()
+    today = pd.Timestamp.now().normalize()
     next_week = today + pd.Timedelta(days=7)
     
     upcoming = filtered_df[
-        (filtered_df['Target Date'].dt.date >= today) & 
-        (filtered_df['Target Date'].dt.date <= next_week) &
+        (filtered_df['Target Date'] >= today) & 
+        (filtered_df['Target Date'] <= next_week) &
         (filtered_df['Status'] != 'Completed')
     ].copy()
     
     if not upcoming.empty:
-        upcoming['Target Date'] = upcoming['Target Date'].dt.strftime('%Y-%m-%d')
+        # Format dates in DD/MM/YY for display
+        upcoming['Target Date'] = upcoming['Target Date'].dt.strftime('%d/%m/%y')
         st.dataframe(
             upcoming[['Engineer Name', 'Category', 'Enablement Area', 'Assigned Certification', 'Target Date', 'Status']],
             width='stretch'
@@ -522,7 +741,8 @@ st.markdown("---")
 st.markdown("""
     <div style='text-align: center; color: gray; padding: 1rem;'>
         Dashboard last updated: {} | Auto-refreshes every {} minutes | Manual refresh available<br>
-        🟢 Completed | 🟡 In Progress | 🔴 Not Started
+        🟢 Completed | 🟡 In Progress | 🔴 Not Started<br>
+        📅 Dates are stored in DD/MM/YY format and displayed accordingly
     </div>
 """.format(
     datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
