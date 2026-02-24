@@ -20,7 +20,7 @@ st.set_page_config(
 # Auto-refresh configuration
 REFRESH_INTERVAL = 300  # 5 minutes in seconds
 
-# Custom CSS for professional look
+# Custom CSS for professional look - Updated for taller uniform box heights
 st.markdown("""
     <style>
     .main-header {
@@ -36,11 +36,28 @@ st.markdown("""
     }
     .metric-card {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 1rem;
+        padding: 1.5rem;  /* Increased padding */
         border-radius: 10px;
         color: white;
         text-align: center;
         box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        height: 160px;  /* Increased from 120px to 160px */
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        margin-bottom: 1rem;
+    }
+    .metric-card h4 {
+        margin: 0;
+        font-size: 1.1rem;  /* Slightly increased */
+        font-weight: 400;
+        opacity: 0.9;
+    }
+    .metric-card h2 {
+        margin: 0.7rem 0 0 0;  /* Increased top margin */
+        font-size: 2.5rem;  /* Increased from 2.2rem to 2.5rem */
+        font-weight: 700;
     }
     .refresh-badge {
         position: fixed;
@@ -77,6 +94,11 @@ st.markdown("""
         border-radius: 20px;
         font-size: 0.85rem;
         font-weight: 500;
+    }
+    /* Ensure all columns have same height */
+    div[data-testid="column"] {
+        display: flex;
+        flex-direction: column;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -272,8 +294,8 @@ if date_range and len(date_range) == 2 and 'Target Date' in filtered_df.columns:
 st.markdown('<p class="main-header">🎯 VMware Certification Dashboard 2026</p>', unsafe_allow_html=True)
 st.markdown("### March 2026 Target Status")
 
-# Top KPI metrics
-col1, col2, col3, col4, col5, col6 = st.columns(6)
+# Top KPI metrics - All 8 columns with equal width and increased uniform height
+col1, col2, col3, col4, col5, col6, col7, col8 = st.columns(8)
 
 with col1:
     st.markdown("""
@@ -321,11 +343,29 @@ with col5:
 with col6:
     completed_count = len(filtered_df[filtered_df['Status'] == 'Completed']) if 'Status' in filtered_df.columns else 0
     st.markdown("""
-        <div class="metric-card">
+        <div class="metric-card" style="background: linear-gradient(135deg, #10B981 0%, #059669 100%); height: 160px;">
             <h4>Completed</h4>
             <h2>{}</h2>
         </div>
     """.format(completed_count), unsafe_allow_html=True)
+
+with col7:
+    in_progress_count = len(filtered_df[filtered_df['Status'] == 'In Progress']) if 'Status' in filtered_df.columns else 0
+    st.markdown("""
+        <div class="metric-card" style="background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%); height: 160px;">
+            <h4>Progress</h4>
+            <h2>{}</h2>
+        </div>
+    """.format(in_progress_count), unsafe_allow_html=True)
+
+with col8:
+    not_started_count = len(filtered_df[filtered_df['Status'] == 'Not Started']) if 'Status' in filtered_df.columns else 0
+    st.markdown("""
+        <div class="metric-card" style="background: linear-gradient(135deg, #EF4444 0%, #DC2626 100%); height: 160px;">
+            <h4>NotStarted</h4>
+            <h2>{}</h2>
+        </div>
+    """.format(not_started_count), unsafe_allow_html=True)
 
 st.markdown("---")
 
