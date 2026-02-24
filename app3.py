@@ -156,6 +156,24 @@ def parse_dates(date_str):
     except:
         return pd.NaT
 
+def prepare_dates_for_display(df):
+    """Prepare date columns for display to avoid Arrow conversion errors"""
+    df_display = df.copy()
+    
+    # List of date columns to handle
+    date_columns = ['Target Date', 'Exam Date']
+    
+    for col in date_columns:
+        if col in df_display.columns:
+            # Convert to datetime first to standardize
+            df_display[col] = pd.to_datetime(df_display[col], errors='coerce')
+            # Then format as string for display
+            df_display[col] = df_display[col].dt.strftime('%d/%m/%y')
+            # Replace 'NaT' strings with empty string
+            df_display[col] = df_display[col].replace('NaT', '')
+    
+    return df_display
+
 # Load data function (no cache for real-time updates)
 def load_data_from_onedrive():
     """Load Excel data from OneDrive"""
@@ -200,7 +218,10 @@ def load_data_from_onedrive():
         if 'Target Date' in df.columns:
             # Apply date parsing function
             df['Target Date'] = df['Target Date'].apply(parse_dates)
-            
+        
+        # Convert Exam Date to datetime if it exists
+        if 'Exam Date' in df.columns:
+            df['Exam Date'] = df['Exam Date'].apply(parse_dates)
         
         # Calculate days remaining
         if 'Target Date' in df.columns:
@@ -613,45 +634,53 @@ with col2:
 # Timeline
 st.markdown('<p class="sub-header">📅 Certification Timeline</p>', unsafe_allow_html=True)
 if 'Target Date' in filtered_df.columns and not filtered_df['Target Date'].isna().all():
-    timeline_data = filtered_df.groupby([filtered_df['Target Date'].dt.date, 'Status']).size().reset_index()
-    timeline_data.columns = ['Target Date', 'Status', 'Count']
+    # Ensure Target Date is datetime for grouping
+    filtered_df_timeline = filtered_df.copy()
+    filtered_df_timeline['Target Date'] = pd.to_datetime(filtered_df_timeline['Target Date'], errors='coerce')
+    filtered_df_timeline = filtered_df_timeline.dropna(subset=['Target Date'])
     
-    # Professional color palette for status
-    status_colors = {'Completed': '#2E7D32', 'In Progress': "#F1CF37", 'Not Started': '#D32F2F'}
-    
-    fig = px.bar(timeline_data, x='Target Date', y='Count', color='Status',
-                  title='Certifications by Target Date',
-                  color_discrete_map=status_colors)
-    
-    fig.update_layout(
-        xaxis_title="Target Date",
-        yaxis_title="Number of Certifications",
-        legend_title="Status",
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        title=dict(
-            text="Certifications by Target Date",
-            font=dict(size=16, color='#1E3A8A'),
-            x=0.5,
-            xanchor='center'
-        ),
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="center",
-            x=0.5
+    if not filtered_df_timeline.empty:
+        timeline_data = filtered_df_timeline.groupby([filtered_df_timeline['Target Date'].dt.date, 'Status']).size().reset_index()
+        timeline_data.columns = ['Target Date', 'Status', 'Count']
+        
+        # Professional color palette for status
+        status_colors = {'Completed': '#2E7D32', 'In Progress': "#F1CF37", 'Not Started': '#D32F2F'}
+        
+        fig = px.bar(timeline_data, x='Target Date', y='Count', color='Status',
+                      title='Certifications by Target Date',
+                      color_discrete_map=status_colors)
+        
+        fig.update_layout(
+            xaxis_title="Target Date",
+            yaxis_title="Number of Certifications",
+            legend_title="Status",
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
+            title=dict(
+                text="Certifications by Target Date",
+                font=dict(size=16, color='#1E3A8A'),
+                x=0.5,
+                xanchor='center'
+            ),
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="center",
+                x=0.5
+            )
         )
-    )
-    
-    fig.update_traces(
-        marker_line_color='white',
-        marker_line_width=1,
-        opacity=0.8,
-        hovertemplate='<b>%{x}</b><br>Status: %{legend}<br>Count: %{y}<extra></extra>'
-    )
-    
-    st.plotly_chart(fig, use_container_width=True)
+        
+        fig.update_traces(
+            marker_line_color='white',
+            marker_line_width=1,
+            opacity=0.8,
+            hovertemplate='<b>%{x}</b><br>Status: %{legend}<br>Count: %{y}<extra></extra>'
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("No valid Target Date data available")
 else:
     st.info("Target Date data not available")
 
@@ -665,9 +694,8 @@ available_columns = [col for col in display_columns if col in filtered_df.column
 if available_columns:
     display_df = filtered_df[available_columns].copy()
     
-    if 'Target Date' in display_df.columns:
-        # Format dates in DD/MM/YY format for display
-        display_df['Target Date'] = display_df['Target Date'].dt.strftime('%d/%m/%y')
+    # Use the new function to prepare all date columns for display
+    display_df = prepare_dates_for_display(display_df)
     
     def color_status(val):
         if val == 'Completed':
@@ -688,7 +716,9 @@ st.markdown("---")
 col1, col2 = st.columns(2)
 with col1:
     if not filtered_df.empty:
-        csv = filtered_df.to_csv(index=False)
+        # Prepare export data with dates as strings to avoid conversion issues
+        export_df = prepare_dates_for_display(filtered_df)
+        csv = export_df.to_csv(index=False)
         st.download_button(
             label="📥 Download Filtered Data (CSV)",
             data=csv,
@@ -696,7 +726,7 @@ with col1:
             mime="text/csv"
         )
 
-# Engineer Summary
+# Engineer Summary - HTML TABLE APPROACH FOR CENTER ALIGNMENT
 st.markdown('<p class="sub-header">👥 Engineer Summary</p>', unsafe_allow_html=True)
 if 'Engineer Name' in filtered_df.columns:
     engineer_summary = filtered_df.groupby('Engineer Name').agg({
@@ -712,27 +742,83 @@ if 'Engineer Name' in filtered_df.columns:
     engineer_summary.columns = ['Engineer Name', 'Categories', 'Total Certs', 'Completed', 'In Progress', 'Not Started']
     engineer_summary['Completion Rate'] = (engineer_summary['Completed'] / engineer_summary['Total Certs'] * 100).round(1)
     
-    st.dataframe(engineer_summary, width='stretch')
+    # Format the Completion Rate column
+    engineer_summary['Completion Rate'] = engineer_summary['Completion Rate'].astype(str) + '%'
+    
+    # Convert to HTML table with inline styles for center alignment
+    html_table = "<div style='overflow-x: auto;'><table style='width:100%; border-collapse: collapse; margin: 10px 0; font-size: 14px; font-family: sans-serif; box-shadow: 0 2px 4px rgba(0,0,0,0.1);'>"
+    
+    # Add headers
+    html_table += "<thead><tr style='background-color: #1E3A8A; color: white;'>"
+    for col in engineer_summary.columns:
+        html_table += f"<th style='text-align: center; padding: 12px; border: 1px solid #dee2e6; font-weight: bold;'>{col}</th>"
+    html_table += "</tr></thead><tbody>"
+    
+    # Add data rows with alternating colors
+    for i, (_, row) in enumerate(engineer_summary.iterrows()):
+        bg_color = '#f8f9fa' if i % 2 == 0 else 'white'
+        html_table += f"<tr style='background-color: {bg_color};'>"
+        for col in engineer_summary.columns:
+            html_table += f"<td style='text-align: center; padding: 10px; border: 1px solid #dee2e6;'>{row[col]}</td>"
+        html_table += "</tr>"
+    
+    html_table += "</tbody></table></div>"
+    
+    # Add some CSS for hover effect
+    html_table += """
+    <style>
+        table tr:hover {
+            background-color: #e9ecef !important;
+        }
+        table tr:hover td {
+            background-color: #e9ecef !important;
+        }
+    </style>
+    """
+    
+    # Display the HTML table
+    st.markdown(html_table, unsafe_allow_html=True)
 
 # Upcoming deadlines
 st.markdown('<p class="sub-header">⏰ Upcoming Deadlines (Next 7 Days)</p>', unsafe_allow_html=True)
 if 'Target Date' in filtered_df.columns and 'Status' in filtered_df.columns:
+    # Ensure Target Date is datetime for filtering
+    filtered_df_filter = filtered_df.copy()
+    filtered_df_filter['Target Date'] = pd.to_datetime(filtered_df_filter['Target Date'], errors='coerce')
+    
     today = pd.Timestamp.now().normalize()
     next_week = today + pd.Timedelta(days=7)
     
-    upcoming = filtered_df[
-        (filtered_df['Target Date'] >= today) & 
-        (filtered_df['Target Date'] <= next_week) &
-        (filtered_df['Status'] != 'Completed')
+    upcoming = filtered_df_filter[
+        (filtered_df_filter['Target Date'] >= today) & 
+        (filtered_df_filter['Target Date'] <= next_week) &
+        (filtered_df_filter['Status'] != 'Completed')
     ].copy()
     
     if not upcoming.empty:
-        # Format dates in DD/MM/YY for display
-        upcoming['Target Date'] = upcoming['Target Date'].dt.strftime('%d/%m/%y')
-        st.dataframe(
-            upcoming[['Engineer Name', 'Category', 'Enablement Area', 'Assigned Certification', 'Target Date', 'Status']],
-            width='stretch'
-        )
+        # Prepare for display using the helper function
+        upcoming_display = upcoming[['Engineer Name', 'Category', 'Enablement Area', 'Assigned Certification', 'Target Date', 'Status']].copy()
+        upcoming_display = prepare_dates_for_display(upcoming_display)
+        
+        # Convert to HTML table for center alignment
+        html_table = "<div style='overflow-x: auto;'><table style='width:100%; border-collapse: collapse; margin: 10px 0; font-size: 14px; font-family: sans-serif;'>"
+        
+        # Add headers
+        html_table += "<thead><tr style='background-color: #f0f2f6; font-weight: bold;'>"
+        for col in upcoming_display.columns:
+            html_table += f"<th style='text-align: center; padding: 10px; border: 1px solid #dee2e6;'>{col}</th>"
+        html_table += "</tr></thead><tbody>"
+        
+        # Add data rows
+        for _, row in upcoming_display.iterrows():
+            html_table += "<tr>"
+            for col in upcoming_display.columns:
+                html_table += f"<td style='text-align: center; padding: 8px; border: 1px solid #dee2e6;'>{row[col]}</td>"
+            html_table += "</tr>"
+        
+        html_table += "</tbody></table></div>"
+        
+        st.markdown(html_table, unsafe_allow_html=True)
     else:
         st.info("No upcoming deadlines in the next 7 days")
 
