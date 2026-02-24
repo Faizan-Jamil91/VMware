@@ -161,7 +161,7 @@ def prepare_dates_for_display(df):
     df_display = df.copy()
     
     # List of date columns to handle
-    date_columns = ['Target Date', 'Exam Date']
+    date_columns = ['Target Date', 'Completion Date']
     
     for col in date_columns:
         if col in df_display.columns:
@@ -219,9 +219,9 @@ def load_data_from_onedrive():
             # Apply date parsing function
             df['Target Date'] = df['Target Date'].apply(parse_dates)
         
-        # Convert Exam Date to datetime if it exists
-        if 'Exam Date' in df.columns:
-            df['Exam Date'] = df['Exam Date'].apply(parse_dates)
+        # Convert Completion Date to datetime if it exists
+        if 'Completion Date' in df.columns:
+            df['Completion Date'] = df['Completion Date'].apply(parse_dates)
         
         # Calculate days remaining
         if 'Target Date' in df.columns:
@@ -688,7 +688,7 @@ else:
 st.markdown('<p class="sub-header">📋 Detailed Certification Plan</p>', unsafe_allow_html=True)
 
 display_columns = ['Category', 'Enablement Area', 'Certification Level', 'Engineer Name', 
-                   'Assigned Certification', 'Target Date', 'Exam Date','Status', 'Remarks']
+                   'Assigned Certification', 'Target Date', 'Completion Date','Status', 'Remarks']
 available_columns = [col for col in display_columns if col in filtered_df.columns]
 
 if available_columns:
